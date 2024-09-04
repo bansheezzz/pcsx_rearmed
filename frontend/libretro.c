@@ -11,7 +11,6 @@
 #include <string.h>
 #include <strings.h>
 #ifdef __MACH__
-#include <unistd.h>
 #include <sys/syscall.h>
 #endif
 
@@ -39,6 +38,8 @@
 #include "plugin_lib.h"
 #include "arm_features.h"
 #include "revision.h"
+#include <unistd.h>
+#include <errno.h>
 
 #include <libretro.h>
 #include "libretro_core_options.h"
@@ -596,6 +597,51 @@ void plat_trigger_vibrate(int pad, int low, int high)
 
    if (in_enable_vibration)
    {
+      FILE *file;
+      int total_strength;
+   
+      if (high > 0)
+      {
+         if ((file = fopen("/sys/class/pwm/pwmchip0/pwm0/duty_cycle", "r+"))) 
+         {
+            total_strength = 1000000 - (((double)high * 1000000) / 255.0);
+            fprintf(file, "%u", total_strength);
+            fclose(file);
+         } 
+         else if ((file = fopen("/sys/class/pwm/pwmchip1/pwm0/duty_cycle", "r+"))) 
+         {
+            total_strength = 1000000 - (((double)high * 1000000) / 255.0);
+            fprintf(file, "%u", total_strength);
+            fclose(file);
+         }
+      } 
+      else if (low > 0)
+      {
+         if ((file = fopen("/sys/class/pwm/pwmchip0/pwm0/duty_cycle", "r+"))) 
+         {
+            fputs("350000", file);
+            fclose(file);
+         } 
+         else if ((file = fopen("/sys/class/pwm/pwmchip1/pwm0/duty_cycle", "r+"))) 
+         {
+            fputs("350000", file);
+            fclose(file);
+         }
+      } 
+      else 
+      {
+         if ((file = fopen("/sys/class/pwm/pwmchip0/pwm0/duty_cycle", "r+"))) 
+         {
+            fputs("1000000", file);
+            fclose(file);
+         } 
+         else if ((file = fopen("/sys/class/pwm/pwmchip1/pwm0/duty_cycle", "r+"))) 
+         {
+            fputs("1000000", file);
+            fclose(file);
+         }
+      }
+
       rumble_cb(pad, RETRO_RUMBLE_STRONG, high << 8);
       rumble_cb(pad, RETRO_RUMBLE_WEAK, low ? 0xffff : 0x0);
    }
@@ -2368,7 +2414,18 @@ static void update_variables(bool in_flight)
       if (strcmp(var.value, "disabled") == 0)
          in_enable_vibration = 0;
       else if (strcmp(var.value, "enabled") == 0)
+      {
          in_enable_vibration = 1;
+         // Check write access for duty cycle for rk3566
+         char* filepath = "/sys/class/pwm/pwmchip1/pwm0/duty_cycle";
+         int returnval;
+         returnval = access (filepath, F_OK);
+         if (returnval == 0){
+           returnval = access (filepath, W_OK);
+           if (errno == EACCES)
+             system("sudo chmod 777 /sys/class/pwm/pwmchip1/pwm0/duty_cycle &");
+         }
+      }
    }
 
    var.value = NULL;
